@@ -1,564 +1,424 @@
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
-import sqlite3
-import re
-import os
-import shutil
-import base64
+import sqlite3, re, os, shutil
 from pathlib import Path
 
-# ── Caminhos ─────────────────────────────────────────────────────────────────
-BASE_DIR   = Path(os.path.dirname(os.path.abspath(__file__)))
-DB_PATH    = BASE_DIR / "agenda.db"
-FOTOS_DIR  = BASE_DIR / "fotos"
+# ── Paths ─────────────────────────────────────────────────────────────────────
+BASE_DIR  = Path(os.path.dirname(os.path.abspath(__file__)))
+DB_PATH   = BASE_DIR / "agenda.db"
+FOTOS_DIR = BASE_DIR / "fotos"
 FOTOS_DIR.mkdir(exist_ok=True)
 
-# ── Banco de dados ────────────────────────────────────────────────────────────
+# ── Banco ─────────────────────────────────────────────────────────────────────
 def init_db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS contatos (
-            id       INTEGER PRIMARY KEY AUTOINCREMENT,
-            nome     TEXT NOT NULL,
-            email    TEXT,
-            endereco TEXT,
-            cpf      TEXT,
-            telefone TEXT,
-            foto     TEXT
-        )
-    """)
-    # Migração: adicionar colunas se não existirem
-    try:
-        conn.execute("ALTER TABLE contatos ADD COLUMN telefone TEXT")
-    except: pass
-    try:
-        conn.execute("ALTER TABLE contatos ADD COLUMN foto TEXT")
-    except: pass
-    conn.commit()
-    conn.close()
+    c = sqlite3.connect(DB_PATH)
+    c.execute("""CREATE TABLE IF NOT EXISTS contatos(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        nome TEXT NOT NULL, email TEXT,
+        endereco TEXT, cpf TEXT, telefone TEXT, foto TEXT)""")
+    c.commit(); c.close()
 
-def buscar_todos(filtro=""):
-    conn = sqlite3.connect(DB_PATH)
+def db_all(filtro=""):
+    c = sqlite3.connect(DB_PATH)
+    q = "SELECT id,nome,email,endereco,cpf,telefone,foto FROM contatos"
     if filtro:
-        rows = conn.execute(
-            "SELECT id,nome,email,endereco,cpf,telefone,foto FROM contatos "
-            "WHERE nome LIKE ? OR email LIKE ? OR cpf LIKE ? ORDER BY nome",
-            (f"%{filtro}%", f"%{filtro}%", f"%{filtro}%")
-        ).fetchall()
+        rows = c.execute(q+" WHERE nome LIKE ? OR email LIKE ? OR cpf LIKE ? ORDER BY nome",
+                         (f"%{filtro}%",)*3).fetchall()
     else:
-        rows = conn.execute(
-            "SELECT id,nome,email,endereco,cpf,telefone,foto FROM contatos ORDER BY nome"
-        ).fetchall()
-    conn.close()
-    return rows
+        rows = c.execute(q+" ORDER BY nome").fetchall()
+    c.close(); return rows
 
-def salvar_contato(nome, email, endereco, cpf, telefone, foto, contato_id=None):
-    conn = sqlite3.connect(DB_PATH)
-    if contato_id:
-        conn.execute(
-            "UPDATE contatos SET nome=?,email=?,endereco=?,cpf=?,telefone=?,foto=? WHERE id=?",
-            (nome, email, endereco, cpf, telefone, foto, contato_id)
-        )
+def db_save(nome, email, endereco, cpf, telefone, foto, cid=None):
+    c = sqlite3.connect(DB_PATH)
+    if cid:
+        c.execute("UPDATE contatos SET nome=?,email=?,endereco=?,cpf=?,telefone=?,foto=? WHERE id=?",
+                  (nome,email,endereco,cpf,telefone,foto,cid))
     else:
-        conn.execute(
-            "INSERT INTO contatos (nome,email,endereco,cpf,telefone,foto) VALUES (?,?,?,?,?,?)",
-            (nome, email, endereco, cpf, telefone, foto)
-        )
-    conn.commit()
-    conn.close()
+        c.execute("INSERT INTO contatos(nome,email,endereco,cpf,telefone,foto) VALUES(?,?,?,?,?,?)",
+                  (nome,email,endereco,cpf,telefone,foto))
+    c.commit(); c.close()
 
-def excluir_contato(contato_id, foto_path):
-    conn = sqlite3.connect(DB_PATH)
-    conn.execute("DELETE FROM contatos WHERE id=?", (contato_id,))
-    conn.commit()
-    conn.close()
-    if foto_path and os.path.exists(foto_path):
-        try: os.remove(foto_path)
+def db_del(cid, foto):
+    c = sqlite3.connect(DB_PATH)
+    c.execute("DELETE FROM contatos WHERE id=?", (cid,))
+    c.commit(); c.close()
+    if foto and os.path.exists(foto):
+        try: os.remove(foto)
         except: pass
 
-def copiar_foto(src_path, contato_nome):
-    ext  = Path(src_path).suffix.lower()
-    nome_safe = re.sub(r'[^\w]', '_', contato_nome)
-    dst  = FOTOS_DIR / f"{nome_safe}_{id(src_path)}{ext}"
-    shutil.copy2(src_path, dst)
-    return str(dst)
+def copy_foto(src, nome):
+    ext = Path(src).suffix.lower()
+    dst = FOTOS_DIR / f"{re.sub(r'[^\\w]','_',nome)}_{abs(hash(src))}{ext}"
+    shutil.copy2(src, dst); return str(dst)
 
-# ── Validações ────────────────────────────────────────────────────────────────
-def validar_email(email):
-    return not email or bool(re.match(r'^[\w\.-]+@[\w\.-]+\.\w{2,}$', email))
+# ── Cores ─────────────────────────────────────────────────────────────────────
+BG      = "#f1f5f9"
+CARD    = "#ffffff"
+BORDER  = "#e2e8f0"
+PRIMARY = "#3b82f6"
+PRIM_D  = "#2563eb"
+SUCCESS = "#16a34a"
+DANGER  = "#ef4444"
+WARN    = "#f59e0b"
+HEADER  = "#1e293b"
+TEXT    = "#1e293b"
+MUTED   = "#94a3b8"
+WHITE   = "#ffffff"
 
-def validar_cpf(cpf):
-    return not cpf or len(re.sub(r'\D', '', cpf)) == 11
+FB = ("Segoe UI", 10, "bold")
+FN = ("Segoe UI", 10)
+FL = ("Segoe UI", 9, "bold")
+FT = ("Segoe UI", 20, "bold")
+FS = ("Segoe UI", 9)
 
-# ── Tema ──────────────────────────────────────────────────────────────────────
-BG          = "#f8fafc"
-SIDEBAR     = "#1e293b"
-SIDEBAR_SEL = "#334155"
-HEADER      = "#0f172a"
-PRIMARY     = "#3b82f6"
-PRIMARY_D   = "#2563eb"
-SUCCESS     = "#22c55e"
-DANGER      = "#ef4444"
-WARNING     = "#f59e0b"
-CARD        = "#ffffff"
-BORDER      = "#e2e8f0"
-TEXT        = "#1e293b"
-MUTED       = "#94a3b8"
-WHITE       = "#ffffff"
-
-F_TITLE  = ("Segoe UI", 22, "bold")
-F_HEAD   = ("Segoe UI", 13, "bold")
-F_LABEL  = ("Segoe UI", 9,  "bold")
-F_ENTRY  = ("Segoe UI", 11)
-F_BTN    = ("Segoe UI", 10, "bold")
-F_SMALL  = ("Segoe UI", 9)
-F_MONO   = ("Consolas",  10)
-
-# ── Helpers de UI ─────────────────────────────────────────────────────────────
-def btn(parent, text, color, hover, cmd, **kw):
-    b = tk.Button(parent, text=text, font=F_BTN, bg=color, fg=WHITE,
-                  relief="flat", cursor="hand2", activebackground=hover,
-                  activeforeground=WHITE, command=cmd, **kw)
-    b.bind("<Enter>", lambda e: b.config(bg=hover))
-    b.bind("<Leave>", lambda e: b.config(bg=color))
+def Btn(p, t, bg, hv, cmd, **kw):
+    b = tk.Button(p, text=t, font=FB, bg=bg, fg=WHITE, relief="flat",
+                  cursor="hand2", activebackground=hv, activeforeground=WHITE,
+                  command=cmd, **kw)
+    b.bind("<Enter>", lambda e: b.config(bg=hv))
+    b.bind("<Leave>", lambda e: b.config(bg=bg))
     return b
 
-def entry_field(parent, label, var, show=None):
-    f = tk.Frame(parent, bg=CARD)
-    f.pack(fill="x", padx=20, pady=(0, 12))
-    tk.Label(f, text=label, font=F_LABEL, bg=CARD, fg=MUTED, anchor="w").pack(fill="x")
-    e = tk.Entry(f, textvariable=var, font=F_ENTRY, bg="#f1f5f9", fg=TEXT,
-                 relief="flat", highlightbackground=BORDER,
-                 highlightthickness=1, show=show or "")
-    e.pack(fill="x", ipady=8, pady=(3,0))
-    return e
-
 # ══════════════════════════════════════════════════════════════════════════════
-class AgendaApp(tk.Tk):
+class App(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("Agenda de Contatos")
-        self.geometry("1050x680")
-        self.minsize(900, 600)
+        self.geometry("860x580")
+        self.minsize(760, 500)
         self.configure(bg=BG)
-
-        self._foto_path    = None   # caminho da foto no formulário
-        self._foto_img     = None   # referência PhotoImage do preview
-        self._editando_id  = None
-        self._editando_foto_atual = None
-
         init_db()
         self._build()
-        self._carregar()
+        self._load()
 
-    # ── Layout principal ──────────────────────────────────────────────────────
+    # ── Tela principal ────────────────────────────────────────────────────────
     def _build(self):
-        # Sidebar esquerda
-        self.sidebar = tk.Frame(self, bg=SIDEBAR, width=220)
-        self.sidebar.pack(side="left", fill="y")
-        self.sidebar.pack_propagate(False)
-        self._build_sidebar()
+        # Topbar
+        top = tk.Frame(self, bg=HEADER, pady=14)
+        top.pack(fill="x")
 
-        # Área principal
-        self.main = tk.Frame(self, bg=BG)
-        self.main.pack(side="left", fill="both", expand=True)
-        self._build_header()
-        self._build_content()
+        tk.Label(top, text="📒  Agenda de Contatos", font=("Segoe UI",16,"bold"),
+                 bg=HEADER, fg=WHITE).pack(side="left", padx=20)
 
-    def _build_sidebar(self):
-        # Logo
-        logo = tk.Frame(self.sidebar, bg=PRIMARY, pady=24)
-        logo.pack(fill="x")
-        tk.Label(logo, text="📒", font=("Segoe UI", 28), bg=PRIMARY, fg=WHITE).pack()
-        tk.Label(logo, text="Agenda", font=("Segoe UI", 14, "bold"),
-                 bg=PRIMARY, fg=WHITE).pack()
-        tk.Label(logo, text="de Contatos", font=("Segoe UI", 10),
-                 bg=PRIMARY, fg="#bfdbfe").pack()
-
-        tk.Frame(self.sidebar, bg=SIDEBAR_SEL, height=1).pack(fill="x", pady=10)
-
-        # Estatísticas
-        self.lbl_total_side = tk.Label(self.sidebar, text="0 contatos",
-                                        font=("Segoe UI", 10), bg=SIDEBAR, fg=MUTED)
-        self.lbl_total_side.pack(pady=(0, 20))
-
-        tk.Frame(self.sidebar, bg=SIDEBAR_SEL, height=1).pack(fill="x")
-
-        # Menu
-        menus = [("➕  Novo Contato", self._novo), ("📋  Ver Todos", self._carregar)]
-        for label, cmd in menus:
-            b = tk.Button(self.sidebar, text=label, font=("Segoe UI", 10),
-                          bg=SIDEBAR, fg=WHITE, relief="flat", anchor="w",
-                          padx=20, pady=12, cursor="hand2",
-                          activebackground=SIDEBAR_SEL, activeforeground=WHITE,
-                          command=cmd)
-            b.pack(fill="x")
-            b.bind("<Enter>", lambda e, b=b: b.config(bg=SIDEBAR_SEL))
-            b.bind("<Leave>", lambda e, b=b: b.config(bg=SIDEBAR))
-
-        # Info na base
-        tk.Label(self.sidebar, text="v2.0 — Com fotos", font=F_SMALL,
-                 bg=SIDEBAR, fg="#475569").place(relx=0.5, rely=0.97, anchor="center")
-
-    def _build_header(self):
-        header = tk.Frame(self.main, bg=CARD, pady=16,
-                          highlightbackground=BORDER, highlightthickness=1)
-        header.pack(fill="x")
-
-        left = tk.Frame(header, bg=CARD)
-        left.pack(side="left", padx=24)
-        self.lbl_titulo = tk.Label(left, text="Meus Contatos",
-                                    font=F_TITLE, bg=CARD, fg=TEXT)
-        self.lbl_titulo.pack(anchor="w")
-        self.lbl_sub = tk.Label(left, text="Gerencie seus contatos com foto",
-                                 font=F_SMALL, bg=CARD, fg=MUTED)
-        self.lbl_sub.pack(anchor="w")
+        right = tk.Frame(top, bg=HEADER)
+        right.pack(side="right", padx=20)
 
         # Busca
-        right = tk.Frame(header, bg=CARD)
-        right.pack(side="right", padx=24)
+        busca_frame = tk.Frame(right, bg="#334155",
+                                highlightbackground="#475569", highlightthickness=1)
+        busca_frame.pack(side="left", padx=(0,12))
+        tk.Label(busca_frame, text="🔍", bg="#334155", fg=WHITE,
+                 font=("Segoe UI",11)).pack(side="left", padx=6)
         self.var_busca = tk.StringVar()
-        self.var_busca.trace_add("write", lambda *a: self._carregar())
-        busca = tk.Frame(right, bg="#f1f5f9",
-                         highlightbackground=BORDER, highlightthickness=1)
-        busca.pack()
-        tk.Label(busca, text="🔍", bg="#f1f5f9", font=("Segoe UI",11)).pack(side="left",padx=8)
-        tk.Entry(busca, textvariable=self.var_busca, font=F_ENTRY,
-                 bg="#f1f5f9", fg=TEXT, relief="flat", width=22).pack(side="left", ipady=7, pady=4, padx=(0,8))
+        self.var_busca.trace_add("write", lambda *a: self._load())
+        tk.Entry(busca_frame, textvariable=self.var_busca, font=FN,
+                 bg="#334155", fg=WHITE, relief="flat", width=20,
+                 insertbackground=WHITE).pack(side="left", ipady=6, pady=4, padx=(0,8))
 
-    def _build_content(self):
-        content = tk.Frame(self.main, bg=BG)
-        content.pack(fill="both", expand=True, padx=20, pady=20)
+        Btn(right, "＋  Novo Contato", PRIMARY, PRIM_D,
+            self._open_form).pack(side="left", padx=4, pady=2, ipady=4)
 
-        # Coluna esquerda — formulário
-        self.frame_form = tk.Frame(content, bg=BG, width=320)
-        self.frame_form.pack(side="left", fill="y", padx=(0,16))
-        self.frame_form.pack_propagate(False)
-        self._build_form()
-
-        # Coluna direita — lista
-        frame_lista = tk.Frame(content, bg=BG)
-        frame_lista.pack(side="left", fill="both", expand=True)
-        self._build_lista(frame_lista)
-
-    # ── Formulário ────────────────────────────────────────────────────────────
-    def _build_form(self):
-        # Cabeçalho do form
-        head = tk.Frame(self.frame_form, bg=BG)
-        head.pack(fill="x", pady=(0,12))
-        self.lbl_form_titulo = tk.Label(head, text="Novo Contato",
-                                         font=F_HEAD, bg=BG, fg=TEXT)
-        self.lbl_form_titulo.pack(side="left")
-
-        # Card do form
-        card = tk.Frame(self.frame_form, bg=CARD,
-                        highlightbackground=BORDER, highlightthickness=1)
-        card.pack(fill="x")
-
-        # ── Foto ──────────────────────────────────────────────────────────────
-        foto_area = tk.Frame(card, bg=CARD)
-        foto_area.pack(pady=20)
-
-        self.foto_canvas = tk.Canvas(foto_area, width=100, height=100,
-                                      bg="#e2e8f0", relief="flat",
-                                      highlightbackground=BORDER, highlightthickness=2,
-                                      cursor="hand2")
-        self.foto_canvas.pack()
-        self.foto_canvas.bind("<Button-1>", lambda e: self._escolher_foto())
-        self._desenhar_avatar()
-
-        tk.Label(foto_area, text="Clique para adicionar foto",
-                 font=F_SMALL, bg=CARD, fg=MUTED).pack(pady=(6,0))
-
-        btn_foto = tk.Frame(foto_area, bg=CARD)
-        btn_foto.pack(pady=4)
-        btn(btn_foto, "📷 Escolher Foto", "#64748b", "#475569",
-            self._escolher_foto, padx=10, pady=4).pack(side="left", padx=2)
-        btn(btn_foto, "✕", DANGER, "#dc2626",
-            self._remover_foto, padx=8, pady=4).pack(side="left", padx=2)
-
-        tk.Frame(card, bg=BORDER, height=1).pack(fill="x", padx=20, pady=(0,12))
-
-        # ── Campos ────────────────────────────────────────────────────────────
-        self.var_nome     = tk.StringVar()
-        self.var_email    = tk.StringVar()
-        self.var_telefone = tk.StringVar()
-        self.var_endereco = tk.StringVar()
-        self.var_cpf      = tk.StringVar()
-
-        self.var_cpf.trace_add("write", self._formatar_cpf)
-
-        entry_field(card, "Nome *", self.var_nome)
-        entry_field(card, "E-mail", self.var_email)
-        entry_field(card, "Telefone", self.var_telefone)
-        entry_field(card, "Endereço", self.var_endereco)
-        entry_field(card, "CPF", self.var_cpf)
-
-        # ── Botões ────────────────────────────────────────────────────────────
-        btns = tk.Frame(card, bg=CARD)
-        btns.pack(fill="x", padx=20, pady=(4,16))
-
-        self.btn_salvar = btn(btns, "💾  Salvar", PRIMARY, PRIMARY_D,
-                               self._salvar, padx=14, pady=9)
-        self.btn_salvar.pack(fill="x", pady=(0,6))
-
-        self.btn_cancelar = btn(btns, "✕  Cancelar", "#e2e8f0", BORDER,
-                                 self._cancelar, padx=14, pady=9)
-        self.btn_cancelar.config(fg=TEXT, activeforeground=TEXT)
-        self.btn_cancelar.pack(fill="x")
-        self.btn_cancelar.pack_forget()
-
-        # Status
-        self.lbl_status = tk.Label(self.frame_form, text="", font=F_SMALL, bg=BG)
-        self.lbl_status.pack(anchor="w", pady=(8,0))
-
-    # ── Lista de contatos ─────────────────────────────────────────────────────
-    def _build_lista(self, parent):
-        # Toolbar
-        toolbar = tk.Frame(parent, bg=BG)
-        toolbar.pack(fill="x", pady=(0,10))
-
-        self.lbl_total = tk.Label(toolbar, text="", font=F_SMALL, bg=BG, fg=MUTED)
-        self.lbl_total.pack(side="right")
+        # Info bar
+        info = tk.Frame(self, bg=BG)
+        info.pack(fill="x", padx=20, pady=(14,6))
+        self.lbl_total = tk.Label(info, text="", font=FS, bg=BG, fg=MUTED)
+        self.lbl_total.pack(side="left")
 
         # Tabela
+        table_frame = tk.Frame(self, bg=CARD,
+                                highlightbackground=BORDER, highlightthickness=1)
+        table_frame.pack(fill="both", expand=True, padx=20, pady=(0,16))
+
         style = ttk.Style()
         style.theme_use("clam")
         style.configure("A.Treeview", background=CARD, foreground=TEXT,
                          fieldbackground=CARD, font=("Segoe UI",10),
-                         rowheight=48, borderwidth=0)
-        style.configure("A.Treeview.Heading", background=HEADER, foreground=WHITE,
-                         font=("Segoe UI",10,"bold"), relief="flat", padding=10)
+                         rowheight=44, borderwidth=0)
+        style.configure("A.Treeview.Heading", background=HEADER,
+                         foreground=WHITE, font=("Segoe UI",10,"bold"),
+                         relief="flat", padding=10)
         style.map("A.Treeview",
                   background=[("selected","#dbeafe")],
-                  foreground=[("selected", TEXT)])
+                  foreground=[("selected",TEXT)])
 
-        cols = ("foto","nome","email","telefone","cpf")
-        self.tree = ttk.Treeview(parent, columns=cols, show="headings",
-                                  style="A.Treeview", selectmode="browse")
+        cols = ("foto","nome","email","telefone","cpf","endereco")
+        self.tree = ttk.Treeview(table_frame, columns=cols,
+                                  show="headings", style="A.Treeview")
 
         self.tree.heading("foto",     text="")
         self.tree.heading("nome",     text="Nome")
         self.tree.heading("email",    text="E-mail")
         self.tree.heading("telefone", text="Telefone")
         self.tree.heading("cpf",      text="CPF")
+        self.tree.heading("endereco", text="Endereço")
 
-        self.tree.column("foto",     width=52,  anchor="center", stretch=False)
-        self.tree.column("nome",     width=180, anchor="w")
-        self.tree.column("email",    width=170, anchor="w")
-        self.tree.column("telefone", width=120, anchor="w")
+        self.tree.column("foto",     width=44,  anchor="center", stretch=False)
+        self.tree.column("nome",     width=160, anchor="w")
+        self.tree.column("email",    width=160, anchor="w")
+        self.tree.column("telefone", width=110, anchor="w")
         self.tree.column("cpf",      width=120, anchor="w")
+        self.tree.column("endereco", width=160, anchor="w")
 
-        scroll = ttk.Scrollbar(parent, orient="vertical", command=self.tree.yview)
-        self.tree.configure(yscrollcommand=scroll.set)
+        sb = ttk.Scrollbar(table_frame, orient="vertical", command=self.tree.yview)
+        self.tree.configure(yscrollcommand=sb.set)
         self.tree.pack(side="left", fill="both", expand=True)
-        scroll.pack(side="left", fill="y")
+        sb.pack(side="left", fill="y")
+        self.tree.bind("<Double-Button-1>", lambda e: self._open_form(edit=True))
 
-        self.tree.bind("<Double-Button-1>", lambda e: self._editar())
+        # Botões ação
+        act = tk.Frame(self, bg=BG)
+        act.pack(fill="x", padx=20, pady=(0,16))
+        Btn(act, "✏️  Editar selecionado", WARN, "#d97706",
+            lambda: self._open_form(edit=True), padx=14, pady=7).pack(side="left", padx=(0,8))
+        Btn(act, "🗑️  Excluir selecionado", DANGER, "#dc2626",
+            self._excluir, padx=14, pady=7).pack(side="left")
+        tk.Label(act, text="Duplo clique para editar",
+                 font=FS, bg=BG, fg=MUTED).pack(side="right")
 
-        # Ações
-        acoes = tk.Frame(parent, bg=BG)
-        acoes.pack(fill="x", pady=(10,0))
-
-        btn(acoes, "✏️  Editar", WARNING, "#d97706", self._editar,
-            padx=14, pady=8).pack(side="left", padx=(0,8))
-        btn(acoes, "🗑️  Excluir", DANGER, "#dc2626", self._excluir,
-            padx=14, pady=8).pack(side="left")
-        tk.Label(acoes, text="Dica: duplo clique para editar",
-                 font=F_SMALL, bg=BG, fg=MUTED).pack(side="right")
-
-        # Mapa de imagens (evita garbage collection)
-        self._imgs = {}
-
-    # ── Foto helpers ──────────────────────────────────────────────────────────
-    def _desenhar_avatar(self, img_path=None):
-        self.foto_canvas.delete("all")
-        if img_path and os.path.exists(img_path):
-            try:
-                from PIL import Image, ImageTk, ImageDraw
-                img = Image.open(img_path).resize((100,100), Image.LANCZOS)
-                # Máscara circular
-                mask = Image.new("L", (100,100), 0)
-                ImageDraw.Draw(mask).ellipse((0,0,100,100), fill=255)
-                img.putalpha(mask)
-                self._foto_preview = ImageTk.PhotoImage(img)
-                self.foto_canvas.create_image(50,50, image=self._foto_preview)
-                return
-            except ImportError:
-                pass
-            except Exception:
-                pass
-        # Avatar padrão
-        self.foto_canvas.create_oval(5,5,95,95, fill="#cbd5e1", outline="")
-        self.foto_canvas.create_text(50,42, text="👤", font=("Segoe UI",30))
-        self.foto_canvas.create_text(50,75, text="Foto", font=F_SMALL, fill=MUTED)
-
-    def _escolher_foto(self):
-        path = filedialog.askopenfilename(
-            title="Escolher foto",
-            filetypes=[("Imagens", "*.png *.jpg *.jpeg *.gif *.bmp *.webp")]
-        )
-        if path:
-            self._foto_path = path
-            self._desenhar_avatar(path)
-
-    def _remover_foto(self):
-        self._foto_path = None
-        self._editando_foto_atual = None
-        self._desenhar_avatar()
-
-    # ── CPF auto-format ───────────────────────────────────────────────────────
-    def _formatar_cpf(self, *args):
-        val  = self.var_cpf.get()
-        nums = re.sub(r'\D', '', val)[:11]
-        fmt  = nums
-        if len(nums) > 9:   fmt = f"{nums[:3]}.{nums[3:6]}.{nums[6:9]}-{nums[9:]}"
-        elif len(nums) > 6: fmt = f"{nums[:3]}.{nums[3:6]}.{nums[6:]}"
-        elif len(nums) > 3: fmt = f"{nums[:3]}.{nums[3:]}"
-        if fmt != val:
-            tr = self.var_cpf.trace_info()
-            if tr: self.var_cpf.trace_remove("write", tr[0][1])
-            self.var_cpf.set(fmt)
-            self.var_cpf.trace_add("write", self._formatar_cpf)
-
-    # ── Carregar lista ────────────────────────────────────────────────────────
-    def _carregar(self):
-        for row in self.tree.get_children():
-            self.tree.delete(row)
-        self._imgs.clear()
-
-        filtro   = self.var_busca.get() if hasattr(self,"var_busca") else ""
-        contatos = buscar_todos(filtro)
-
-        for c in contatos:
-            cid, nome, email, endereco, cpf, telefone, foto = c
-            # Ícone de foto
+    # ── Carregar ──────────────────────────────────────────────────────────────
+    def _load(self):
+        for r in self.tree.get_children(): self.tree.delete(r)
+        filtro = self.var_busca.get()
+        data   = db_all(filtro)
+        for c in data:
+            cid,nome,email,endereco,cpf,telefone,foto = c
             icone = "📷" if foto and os.path.exists(foto) else "👤"
-            self.tree.insert("", "end", iid=str(cid),
-                              values=(icone, nome, email or "", telefone or "", cpf or ""),
+            self.tree.insert("","end", iid=str(cid),
+                              values=(icone,nome,email or "",telefone or "",cpf or "",endereco or ""),
                               tags=(foto or "",))
-
-        total = len(contatos)
-        self.lbl_total.config(text=f"{total} contato(s)")
-        if hasattr(self, "lbl_total_side"):
-            self.lbl_total_side.config(text=f"{total} contato(s)")
-
-    # ── Limpar form ───────────────────────────────────────────────────────────
-    def _limpar(self):
-        self.var_nome.set("")
-        self.var_email.set("")
-        self.var_telefone.set("")
-        self.var_endereco.set("")
-        self.var_cpf.set("")
-        self._foto_path = None
-        self._editando_id = None
-        self._editando_foto_atual = None
-        self._desenhar_avatar()
-        self.btn_salvar.config(text="💾  Salvar")
-        self.btn_cancelar.pack_forget()
-        self.lbl_form_titulo.config(text="Novo Contato")
-        self.lbl_status.config(text="")
-
-    def _novo(self):
-        self._limpar()
-
-    def _cancelar(self):
-        self._limpar()
-
-    # ── Salvar ────────────────────────────────────────────────────────────────
-    def _salvar(self):
-        nome     = self.var_nome.get().strip()
-        email    = self.var_email.get().strip()
-        telefone = self.var_telefone.get().strip()
-        endereco = self.var_endereco.get().strip()
-        cpf      = self.var_cpf.get().strip()
-
-        if not nome:
-            messagebox.showwarning("Campo obrigatório", "O campo Nome é obrigatório.")
-            return
-        if not validar_email(email):
-            messagebox.showwarning("E-mail inválido", "Informe um e-mail válido.")
-            return
-        if not validar_cpf(cpf):
-            messagebox.showwarning("CPF inválido", "O CPF deve ter 11 dígitos.")
-            return
-
-        # Processar foto
-        foto_salva = self._editando_foto_atual
-        if self._foto_path and self._foto_path != self._editando_foto_atual:
-            foto_salva = copiar_foto(self._foto_path, nome)
-
-        salvar_contato(nome, email, endereco, cpf, telefone, foto_salva, self._editando_id)
-
-        msg = "atualizado" if self._editando_id else "salvo"
-        self.lbl_status.config(text=f"✅ Contato {msg} com sucesso!", fg=SUCCESS)
-        self._limpar()
-        self._carregar()
-
-    # ── Editar ────────────────────────────────────────────────────────────────
-    def _editar(self):
-        sel = self.tree.selection()
-        if not sel:
-            messagebox.showinfo("Atenção", "Selecione um contato para editar.")
-            return
-
-        cid = int(sel[0])
-        contatos = buscar_todos()
-        c = next((x for x in contatos if x[0] == cid), None)
-        if not c: return
-
-        cid, nome, email, endereco, cpf, telefone, foto = c
-        self._editando_id = cid
-        self._editando_foto_atual = foto
-
-        self.var_nome.set(nome or "")
-        self.var_email.set(email or "")
-        self.var_telefone.set(telefone or "")
-        self.var_endereco.set(endereco or "")
-        self.var_cpf.set(cpf or "")
-        self._foto_path = foto
-        self._desenhar_avatar(foto)
-
-        self.lbl_form_titulo.config(text="Editar Contato")
-        self.btn_salvar.config(text="💾  Atualizar")
-        self.btn_cancelar.pack(fill="x")
-        self.lbl_status.config(text=f"✏️  Editando: {nome}", fg=WARNING)
+        self.lbl_total.config(text=f"{len(data)} contato(s) salvos")
 
     # ── Excluir ───────────────────────────────────────────────────────────────
     def _excluir(self):
         sel = self.tree.selection()
         if not sel:
-            messagebox.showinfo("Atenção", "Selecione um contato para excluir.")
+            messagebox.showinfo("Atenção","Selecione um contato para excluir."); return
+        nome = self.tree.item(sel[0],"values")[1]
+        foto = (self.tree.item(sel[0],"tags") or ("",))[0]
+        if messagebox.askyesno("Confirmar",f"Excluir '{nome}'?"):
+            db_del(int(sel[0]), foto)
+            self._load()
+
+    # ── Abrir formulário (janela modal) ───────────────────────────────────────
+    def _open_form(self, edit=False):
+        cid = None; row = None
+        if edit:
+            sel = self.tree.selection()
+            if not sel:
+                messagebox.showinfo("Atenção","Selecione um contato para editar."); return
+            cid = int(sel[0])
+            all_ = db_all()
+            row  = next((x for x in all_ if x[0]==cid), None)
+
+        FormDialog(self, row, self._load)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+class FormDialog(tk.Toplevel):
+    def __init__(self, master, row, on_save):
+        super().__init__(master)
+        self.on_save   = on_save
+        self._foto_path = None
+        self._foto_img  = None
+        self._cpf_busy  = False
+
+        is_edit = row is not None
+        self.cid = row[0] if is_edit else None
+        self._foto_atual = row[6] if is_edit else None
+
+        self.title("Editar Contato" if is_edit else "Novo Contato")
+        self.geometry("460x640")
+        self.resizable(False, False)
+        self.configure(bg=CARD)
+        self.grab_set()
+        self.focus_force()
+
+        self._build(row)
+
+        # Preencher campos se edição
+        if is_edit:
+            self.v_nome.set(row[1] or "")
+            self.v_email.set(row[2] or "")
+            self.v_end.set(row[3] or "")
+            self.v_cpf.set(row[4] or "")
+            self.v_tel.set(row[5] or "")
+            self._foto_path = row[6]
+            self._draw_avatar(row[6])
+
+    def _build(self, row):
+        # Cabeçalho
+        head = tk.Frame(self, bg=HEADER, pady=16)
+        head.pack(fill="x")
+        titulo = "Editar Contato" if row else "Novo Contato"
+        tk.Label(head, text=titulo, font=("Segoe UI",14,"bold"),
+                 bg=HEADER, fg=WHITE).pack()
+
+        # Scroll frame
+        canvas = tk.Canvas(self, bg=CARD, highlightthickness=0)
+        scroll = ttk.Scrollbar(self, orient="vertical", command=canvas.yview)
+        self.scroll_frame = tk.Frame(canvas, bg=CARD)
+        self.scroll_frame.bind("<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+        canvas.create_window((0,0), window=self.scroll_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scroll.set)
+        canvas.pack(side="left", fill="both", expand=True)
+        scroll.pack(side="right", fill="y")
+
+        f = self.scroll_frame
+
+        # Foto
+        foto_area = tk.Frame(f, bg=CARD)
+        foto_area.pack(pady=20)
+
+        self.foto_cv = tk.Canvas(foto_area, width=110, height=110,
+                                  bg="#e2e8f0", relief="flat",
+                                  highlightbackground=BORDER, highlightthickness=2,
+                                  cursor="hand2")
+        self.foto_cv.pack()
+        self.foto_cv.bind("<Button-1>", lambda e: self._choose_foto())
+        self._draw_avatar()
+
+        tk.Label(foto_area, text="Clique na imagem para adicionar foto",
+                 font=FS, bg=CARD, fg=MUTED).pack(pady=(6,0))
+
+        bf = tk.Frame(foto_area, bg=CARD)
+        bf.pack(pady=6)
+        Btn(bf, "📷  Escolher Foto", "#64748b", "#475569",
+            self._choose_foto, padx=10, pady=5).pack(side="left", padx=4)
+        Btn(bf, "✕  Remover", DANGER, "#dc2626",
+            self._remove_foto, padx=10, pady=5).pack(side="left", padx=4)
+
+        tk.Frame(f, bg=BORDER, height=1).pack(fill="x", padx=20, pady=(0,16))
+
+        # Variáveis
+        self.v_nome  = tk.StringVar()
+        self.v_email = tk.StringVar()
+        self.v_tel   = tk.StringVar()
+        self.v_end   = tk.StringVar()
+        self.v_cpf   = tk.StringVar()
+
+        # Campos
+        self._field(f, "Nome *", self.v_nome)
+        self._field(f, "E-mail", self.v_email)
+        self._field(f, "Telefone", self.v_tel)
+        self._field(f, "Endereço", self.v_end)
+
+        # CPF com máscara
+        cpf_f = tk.Frame(f, bg=CARD)
+        cpf_f.pack(fill="x", padx=24, pady=(0,12))
+        tk.Label(cpf_f, text="CPF", font=FL, bg=CARD, fg=MUTED, anchor="w").pack(fill="x")
+        self.e_cpf = tk.Entry(cpf_f, textvariable=self.v_cpf, font=("Segoe UI",11),
+                               bg="#f8fafc", fg=TEXT, relief="flat",
+                               highlightbackground=BORDER, highlightthickness=1)
+        self.e_cpf.pack(fill="x", ipady=9, pady=(3,0))
+        self.e_cpf.bind("<KeyRelease>", self._mask_cpf)
+
+        # Botão salvar
+        bot = tk.Frame(f, bg=CARD)
+        bot.pack(fill="x", padx=24, pady=(8,24))
+        Btn(bot, "💾  Salvar Contato", SUCCESS, "#15803d",
+            self._save, padx=16, pady=11).pack(fill="x", pady=(0,8))
+        Btn(bot, "Cancelar", "#e2e8f0", BORDER,
+            self.destroy, padx=16, pady=11).config(fg=TEXT, activeforeground=TEXT)
+        tk.Button(bot, text="Cancelar", font=FB, bg="#e2e8f0", fg=TEXT,
+                  relief="flat", cursor="hand2", command=self.destroy,
+                  padx=16, pady=11).pack(fill="x")
+
+    def _field(self, parent, label, var):
+        f = tk.Frame(parent, bg=CARD)
+        f.pack(fill="x", padx=24, pady=(0,12))
+        tk.Label(f, text=label, font=FL, bg=CARD, fg=MUTED, anchor="w").pack(fill="x")
+        e = tk.Entry(f, textvariable=var, font=("Segoe UI",11),
+                     bg="#f8fafc", fg=TEXT, relief="flat",
+                     highlightbackground=BORDER, highlightthickness=1)
+        e.pack(fill="x", ipady=9, pady=(3,0))
+        return e
+
+    # ── Foto ──────────────────────────────────────────────────────────────────
+    def _draw_avatar(self, path=None):
+        self.foto_cv.delete("all")
+        if path and os.path.exists(str(path)):
+            try:
+                from PIL import Image, ImageTk, ImageDraw
+                img  = Image.open(path).resize((110,110), Image.LANCZOS)
+                mask = Image.new("L",(110,110),0)
+                ImageDraw.Draw(mask).ellipse((0,0,110,110),fill=255)
+                out  = Image.new("RGBA",(110,110),(0,0,0,0))
+                out.paste(img, mask=mask)
+                self._foto_img = ImageTk.PhotoImage(out)
+                self.foto_cv.create_image(55,55,image=self._foto_img)
+                return
+            except ImportError:
+                self.foto_cv.create_rectangle(0,0,110,110,fill=PRIMARY,outline="")
+                self.foto_cv.create_text(55,55,text="📷",font=("Segoe UI",30))
+                return
+            except: pass
+        self.foto_cv.create_oval(6,6,104,104,fill="#cbd5e1",outline="")
+        self.foto_cv.create_text(55,48,text="👤",font=("Segoe UI",32))
+        self.foto_cv.create_text(55,82,text="Adicionar foto",font=FS,fill=MUTED)
+
+    def _choose_foto(self):
+        p = filedialog.askopenfilename(
+            title="Escolher foto",
+            filetypes=[("Imagens","*.png *.jpg *.jpeg *.bmp *.gif *.webp"),
+                       ("Todos","*.*")])
+        if p:
+            self._foto_path = p
+            self._draw_avatar(p)
+
+    def _remove_foto(self):
+        self._foto_path = None
+        self._foto_atual = None
+        self._draw_avatar()
+
+    # ── CPF máscara ───────────────────────────────────────────────────────────
+    def _mask_cpf(self, event=None):
+        if self._cpf_busy: return
+        self._cpf_busy = True
+        try:
+            pos  = self.e_cpf.index(tk.INSERT)
+            raw  = self.v_cpf.get()
+            nums = re.sub(r"\D","",raw)[:11]
+            if   len(nums)>9: fmt=f"{nums[:3]}.{nums[3:6]}.{nums[6:9]}-{nums[9:]}"
+            elif len(nums)>6: fmt=f"{nums[:3]}.{nums[3:6]}.{nums[6:]}"
+            elif len(nums)>3: fmt=f"{nums[:3]}.{nums[3:]}"
+            else:             fmt=nums
+            if fmt != raw:
+                self.v_cpf.set(fmt)
+                np = min(pos+(len(fmt)-len(raw)), len(fmt))
+                self.e_cpf.icursor(np)
+        finally:
+            self._cpf_busy = False
+
+    # ── Salvar ────────────────────────────────────────────────────────────────
+    def _save(self):
+        nome     = self.v_nome.get().strip()
+        email    = self.v_email.get().strip()
+        telefone = self.v_tel.get().strip()
+        endereco = self.v_end.get().strip()
+        cpf      = self.v_cpf.get().strip()
+
+        if not nome:
+            messagebox.showwarning("Campo obrigatório","Nome é obrigatório.",parent=self)
+            return
+        if email and not re.match(r'^[\w\.-]+@[\w\.-]+\.\w{2,}$', email):
+            messagebox.showwarning("E-mail inválido","Informe um e-mail válido.",parent=self)
+            return
+        nums = re.sub(r"\D","",cpf)
+        if cpf and len(nums) != 11:
+            messagebox.showwarning("CPF inválido","O CPF deve ter 11 dígitos.",parent=self)
             return
 
-        vals = self.tree.item(sel[0], "values")
-        nome = vals[1]
-        foto = self.tree.item(sel[0], "tags")[0] if self.tree.item(sel[0], "tags") else ""
+        foto_salva = self._foto_atual
+        if self._foto_path and self._foto_path != self._foto_atual:
+            foto_salva = copy_foto(self._foto_path, nome)
+        elif self._foto_path is None:
+            foto_salva = None
 
-        if messagebox.askyesno("Confirmar", f"Excluir o contato '{nome}'?"):
-            excluir_contato(int(sel[0]), foto)
-            self.lbl_status.config(text=f"🗑️  '{nome}' excluído.", fg=DANGER)
-            self._carregar()
+        db_save(nome, email, endereco, cpf, telefone, foto_salva, self.cid)
+        self.on_save()
+        self.destroy()
 
-# ── Iniciar ───────────────────────────────────────────────────────────────────
+# ── Main ──────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    try:
-        from PIL import Image
-        PIL_OK = True
-    except ImportError:
-        PIL_OK = False
-
-    app = AgendaApp()
-
-    if not PIL_OK:
-        def show_pil_tip():
-            if messagebox.askyesno(
-                "Dica — Fotos em círculo",
-                "Para exibir fotos em formato circular instale o Pillow:\n\n"
-                "pip install Pillow\n\n"
-                "Deseja continuar sem ele? (fotos ainda funcionam)"
-            ):
-                pass
-        app.after(500, show_pil_tip)
-
-    app.mainloop()
+    App().mainloop()
